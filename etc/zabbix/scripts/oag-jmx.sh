@@ -51,7 +51,7 @@ if [ ! -f "/tmp/oag-jmx-monitoring.cache.txt" -o "`find /tmp/oag-jmx-monitoring.
   # Cache is older than one minute
 
   # Use docker if it's installed and the current user have rights to access the docker engine
-  if [ command -v docker >/dev/null 2>&1 ] && [ -w /var/run/docker.sock ]; then
+  if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
     echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
          | docker run --rm -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
@@ -111,7 +111,7 @@ case $COMMAND in
 
 
   system)
-    LINE=$(sed -n -e '/groupName = System overview;/,/}, { / p' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT")
+    LINE=$(sed -n -e '/groupName = System overview;/,/}, { / p' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
@@ -159,7 +159,7 @@ case $COMMAND in
   ;;
 
   server)
-    LINE=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2")
+    LINE=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
@@ -192,7 +192,7 @@ case $COMMAND in
   ;;
 
   method)
-    LINE=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2")
+    LINE=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
@@ -224,7 +224,7 @@ case $COMMAND in
   ;;
 
   service)
-    LINE=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2")
+    LINE=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
@@ -253,7 +253,7 @@ case $COMMAND in
   ;;
 
   client)
-    LINE=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2")
+    LINE=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
