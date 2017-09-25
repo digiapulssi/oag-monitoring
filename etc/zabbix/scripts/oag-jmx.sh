@@ -53,20 +53,28 @@ if [ ! -f "/tmp/oag-jmx-monitoring.cache.txt" -o "`find /tmp/oag-jmx-monitoring.
   # Use docker if it's installed and the current user have rights to access the docker engine
   if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
-    echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
+    if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
          | docker run --rm -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
            java -jar /jmxterm.jar \
-           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt
+           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt; then
+      # Failed, clean up cache so that subsequent calls do not just return empty data
+      rm -f /tmp/oag-jmx-monitoring.cache.txt
+      exit 1
+    fi
 
   else
-    if [ ! command -v java >/dev/null 2>&1 ]; then
+    if ! command -v java >/dev/null 2>&1; then
       echo "Java is not installed; either Java or Docker must be installed"
       exit 1
     fi
 
-    echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
+    if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
          | java -jar "${DIR}/jmxterm-1.0.0-uber.jar" \
-           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt
+           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt; then
+      # Failed, clean up cache so that subsequent calls do not just return empty data
+      rm -f /tmp/oag-jmx-monitoring.cache.txt
+      exit 1
+    fi
   fi
 fi
 
