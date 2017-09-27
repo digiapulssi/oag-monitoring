@@ -54,7 +54,7 @@ if [ ! -f "/tmp/oag-jmx-monitoring.cache.txt" -o "`find /tmp/oag-jmx-monitoring.
   if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
     if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
-         | docker run --rm -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
+         | docker run --rm --name oag-jmx-monitoring -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
            java -jar /jmxterm.jar \
            -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt; then
       # Failed, clean up cache so that subsequent calls do not just return empty data
