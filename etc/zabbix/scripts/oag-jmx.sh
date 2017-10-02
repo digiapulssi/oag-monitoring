@@ -169,7 +169,12 @@ case $COMMAND in
   server)
     LINE=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
-    echo "$VALUE"
+    if [[ "$ARGUMENT2" =~ ^respTime.* ]] && [ "$VALUE" = "-1" ]; then
+      # Response time of -1 indicates that there has been no messages; thus response time cannot be measured
+      # Do not print anything so that Zabbix item will have nodata
+    else
+      echo "$VALUE"
+    fi
   ;;
 
   ## Method block is like the following:
