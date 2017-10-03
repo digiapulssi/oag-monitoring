@@ -170,10 +170,10 @@ case $COMMAND in
     LINE=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
 
-    # Response time of -1 indicates that there has been no messages; thus response time cannot be measured
-    # Do not print anything in that case so that Zabbix item will have nodata
-    if ! [[ "$ARGUMENT2" =~ ^respTime.* ]] || ! [ "$VALUE" = "-1" ]; then
-      echo "$VALUE"
+    if [ -z "$VALUE" ] && [ "$ARGUMENT2" = "numTransactions" ]; then
+      # Server does not exist any more in JMX tree
+      # Return number of transaction as 0 because 1) that's valid, no transactions 2) otherwise we cannot detect zero transactions in Zabbix
+      echo "0"
     fi
   ;;
 
