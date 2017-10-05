@@ -47,8 +47,14 @@ function refresh_cache()
 {
   SERVER_AND_PORT="$1"
   CACHE_FILE="$2"
-  if [ ! -f "$CACHE_FILE" -o "`find $CACHE_FILE -mmin +1 2>/dev/null`" ]; then
-    # Cache is older than one minute
+  if [ ! -f "$CACHE_FILE" ] || [[ $(find "$CACHE_FILE" -mmin +2 -print 2>/dev/null) ]]; then
+    # Cache is older than two minutes
+
+    # Check if we had a connection error less than two minutes ago
+    if [ -f "$CACHE_FILE.error" ] && [[ ! $(find "$CACHE_FILE.error" -mmin +2 -print 2>/dev/null) ]]; then
+      # We have recently had a connection error to the server; don't try connection every time the script is called to get some metrics
+      return 1
+    fi
 
     # Use docker if it's installed and the current user have rights to access the docker engine
     if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
@@ -59,7 +65,8 @@ function refresh_cache()
              -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
-        exit 1
+        touch "$CACHE_FILE.error"
+        return 1
       fi
 
     else
@@ -73,7 +80,8 @@ function refresh_cache()
              -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
-        exit 1
+        touch "$CACHE_FILE.error"
+        return 1
       fi
     fi
   fi
@@ -104,7 +112,8 @@ elif [ "$#" -eq 5 -o "$#" -eq 7 ]; then
   CACHE1_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER1_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
   CACHE2_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER2_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
 
-  if ! refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ! refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE"; then
+  if ! refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" && ! refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE"; then
+    # Both servers fail (if one server is down we can still proceed)
     exit 1
   fi
 
@@ -191,10 +200,10 @@ case $COMMAND in
     echo -n '{"data":['
 
     # Get each groupName 15 lines before groupType = TargetServer
-    SERVERS1=$(grep -B 15 'groupType = TargetServer;' "$CACHE1_FILE" \
+    SERVERS1=$(grep -B 15 'groupType = TargetServer;' "$CACHE1_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
-    SERVERS2=$(grep -B 15 'groupType = TargetServer;' "$CACHE2_FILE" \
+    SERVERS2=$(grep -B 15 'groupType = TargetServer;' "$CACHE2_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
 
@@ -207,8 +216,8 @@ case $COMMAND in
   ;;
 
   server)
-    VALUE1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
-    VALUE2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
     if [[ $ARGUMENT2 == respTimeRange* ]] || [[ $ARGUMENT2 == num* ]] || [[ $ARGUMENT2 == volume* ]] || [[ $ARGUMENT2 == uptime* ]] || [[ $ARGUMENT2 == respStat* ]]; then
       # Sum the values up
       VALUE=$((VALUE1+VALUE2))
@@ -220,8 +229,8 @@ case $COMMAND in
       VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
     elif [ "$ARGUMENT2" == "respTimeAvg" ]; then
       # Take the average of two values, in relation to the transaction count
-      COUNT1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
-      COUNT2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
       VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
     else
       echo "Unsupported command argument $ARGUMENT2"
@@ -257,10 +266,10 @@ case $COMMAND in
   method_discovery)
     echo -n '{"data":['
 
-    METHODS1=$(grep -A 4 'groupType = Method;' "$CACHE1_FILE" \
+    METHODS1=$(grep -A 4 'groupType = Method;' "$CACHE1_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
-    METHODS2=$(grep -A 4 'groupType = Method;' "$CACHE2_FILE" \
+    METHODS2=$(grep -A 4 'groupType = Method;' "$CACHE2_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
 
@@ -273,8 +282,8 @@ case $COMMAND in
   ;;
 
   method)
-    VALUE1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
-    VALUE2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
     if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
       # Sum the values up
       VALUE=$((VALUE1+VALUE2))
@@ -286,8 +295,8 @@ case $COMMAND in
       VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
     elif [ "$ARGUMENT2" == "processingTimeAvg" ]; then
       # Take the average of two values, in relation to the message count
-      COUNT1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
-      COUNT2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
       VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
     else
       echo "Unsupported command argument $ARGUMENT2"
@@ -315,10 +324,10 @@ case $COMMAND in
   service_discovery)
     echo -n '{"data":['
 
-    SERVICES1=$(grep -A 4 'groupType = Service;' "$CACHE1_FILE" \
+    SERVICES1=$(grep -A 4 'groupType = Service;' "$CACHE1_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
-    SERVICES2=$(grep -A 4 'groupType = Service;' "$CACHE2_FILE" \
+    SERVICES2=$(grep -A 4 'groupType = Service;' "$CACHE2_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
 
@@ -331,8 +340,8 @@ case $COMMAND in
   ;;
 
   service)
-    VALUE1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
-    VALUE2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
     if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
       # Sum the values up
       VALUE=$((VALUE1+VALUE2))
@@ -344,8 +353,8 @@ case $COMMAND in
       VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
     elif [ "$ARGUMENT2" == "processingTimeAvg" ]; then
       # Take the average of two values, in relation to the message count
-      COUNT1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
-      COUNT2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
       VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
     else
       echo "Unsupported command argument $ARGUMENT2"
@@ -370,10 +379,10 @@ case $COMMAND in
   client_discovery)
     echo -n '{"data":['
 
-    CLIENTS1=$(grep -A 4 'groupType = Client;' "$CACHE1_FILE" \
+    CLIENTS1=$(grep -A 4 'groupType = Client;' "$CACHE1_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
-    CLIENTS2=$(grep -A 4 'groupType = Client;' "$CACHE2_FILE" \
+    CLIENTS2=$(grep -A 4 'groupType = Client;' "$CACHE2_FILE" 2>/dev/null \
       | grep 'groupName =' \
       | sed -e 's/.*= \(.*\);/\1/')
 
@@ -386,8 +395,8 @@ case $COMMAND in
   ;;
 
   client)
-    VALUE1=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
-    VALUE2=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
     if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
       # Sum the values up
       VALUE=$((VALUE1+VALUE2))
