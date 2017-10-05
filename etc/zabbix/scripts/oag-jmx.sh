@@ -1,8 +1,13 @@
 #!/bin/bash
 set -e
 
-# Usage: ./oag-jmx.sh [SERVER:PORT] [USERNAME] [PASSWORD] [command] <command arguments>
-# where command can be one of the following:
+# Usage1: ./oag-jmx.sh [SERVER:PORT] [USERNAME] [PASSWORD] system <command arguments>
+# Usage2: ./oag-jmx.sh [SERVER1:PORT] [SERVER2:PORT] [USERNAME] [PASSWORD] [discovery command]
+# Usage3: ./oag-jmx.sh [SERVER1:PORT] [SERVER2:PORT] [USERNAME] [PASSWORD] [metrics command] [argument1] [argument2]
+
+# In 2. and 3. usages script uses both servers to merge the discovered remote hosts and sum up or calculate an average of the metrics
+#
+# Command can be one of the following:
 #  - system: System overview metric,
 #    argument is one of cpuUsed, systemMemoryUsed, cpuUsedMax, memoryUsedMin, cpuUsedAvg, diskUsedPercent, exceptions, numMessagesProcessed,
 #                       messageMonitoringEnabled, systemCpuAvg, metricsLoggingEnabled, processSignature, failures, successes, serverTitle,
@@ -36,55 +41,82 @@ set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ "$#" -lt 4 ]; then
-  echo "Missing command-line arguments"
-  exit 1
-fi
-SERVER_AND_PORT="$1"
-USERNAME="$2"
-PASSWORD="$3"
-COMMAND="$4"
-ARGUMENT="$5"
-ARGUMENT2="$6"
+# Refresh JMX cache if needed
+# Arguments: SERVER:PORT CACHEFILE
+function refresh_cache()
+{
+  SERVER_AND_PORT="$1"
+  CACHE_FILE="$2"
+  if [ ! -f "$CACHE_FILE" -o "`find $CACHE_FILE -mmin +1 2>/dev/null`" ]; then
+    # Cache is older than one minute
 
-if [ ! -f "/tmp/oag-jmx-monitoring.cache.txt" -o "`find /tmp/oag-jmx-monitoring.cache.txt -mmin +1 2>/dev/null`" ]; then
-  # Cache is older than one minute
+    # Use docker if it's installed and the current user have rights to access the docker engine
+    if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
-  # Use docker if it's installed and the current user have rights to access the docker engine
-  if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
+      if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
+           | docker run --rm --name oag-jmx-monitoring -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
+             java -jar /jmxterm.jar \
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
+        # Failed, clean up cache so that subsequent calls do not just return empty data
+        rm -f "$CACHE_FILE"
+        exit 1
+      fi
 
-    if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
-         | docker run --rm --name oag-jmx-monitoring -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
-           java -jar /jmxterm.jar \
-           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt; then
-      # Failed, clean up cache so that subsequent calls do not just return empty data
-      rm -f /tmp/oag-jmx-monitoring.cache.txt
-      exit 1
-    fi
+    else
+      if ! command -v java >/dev/null 2>&1; then
+        echo "Java is not installed; either Java or Docker must be installed"
+        exit 1
+      fi
 
-  else
-    if ! command -v java >/dev/null 2>&1; then
-      echo "Java is not installed; either Java or Docker must be installed"
-      exit 1
-    fi
-
-    if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
-         | java -jar "${DIR}/jmxterm-1.0.0-uber.jar" \
-           -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > /tmp/oag-jmx-monitoring.cache.txt; then
-      # Failed, clean up cache so that subsequent calls do not just return empty data
-      rm -f /tmp/oag-jmx-monitoring.cache.txt
-      exit 1
+      if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
+           | java -jar "${DIR}/jmxterm-1.0.0-uber.jar" \
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
+        # Failed, clean up cache so that subsequent calls do not just return empty data
+        rm -f "$CACHE_FILE"
+        exit 1
+      fi
     fi
   fi
+}
+
+if [ "$4" == "system" ]; then
+  # Usage 1
+  SERVER_AND_PORT="$1"
+  USERNAME="$2"
+  PASSWORD="$3"
+  COMMAND="$4"
+  ARGUMENT="$5"
+  CACHE_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
+
+  if ! refresh_cache "$SERVER_AND_PORT" "$CACHE_FILE"; then
+    exit 1
+  fi
+
+elif [ "$#" -eq 5 -o "$#" -eq 7 ]; then
+  # Usages 2 and 3
+  SERVER1_AND_PORT="$1"
+  SERVER2_AND_PORT="$2"
+  USERNAME="$3"
+  PASSWORD="$4"
+  COMMAND="$5"
+  ARGUMENT="$6"
+  ARGUMENT2="$7"
+  CACHE1_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER1_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
+  CACHE2_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER2_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
+
+  if ! refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ! refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE"; then
+    exit 1
+  fi
+
+else
+  echo "Invalid command-line arguments"
+  exit 1
 fi
-
-
-
 
 case $COMMAND in
 
   ## System block is like the following:
-  # }, { 
+  # }, {
   #  groupName = System overview;
   #  cpuUsed = 7;
   #  systemMemoryUsed = 7886232;
@@ -119,7 +151,7 @@ case $COMMAND in
 
 
   system)
-    LINE=$(sed -n -e '/groupName = System overview;/,/}, { / p' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT =")
+    LINE=$(sed -n -e '/groupName = System overview;/,/}, { / p' "$CACHE_FILE" | grep "$ARGUMENT =")
     VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
     echo "$VALUE"
   ;;
@@ -157,23 +189,52 @@ case $COMMAND in
 
   server_discovery)
     echo -n '{"data":['
+
     # Get each groupName 15 lines before groupType = TargetServer
-    # And format lines to json
-    grep -B 15 'groupType = TargetServer;' /tmp/oag-jmx-monitoring.cache.txt \
+    SERVERS1=$(grep -B 15 'groupType = TargetServer;' "$CACHE1_FILE" \
       | grep 'groupName =' \
-      | sed -e 's/.*= \(.*\);/\1/' \
-      | sed 's/\(.*\)/{"{#SERVER}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
+      | sed -e 's/.*= \(.*\);/\1/')
+    SERVERS2=$(grep -B 15 'groupType = TargetServer;' "$CACHE2_FILE" \
+      | grep 'groupName =' \
+      | sed -e 's/.*= \(.*\);/\1/')
+
+    # Merge the lists and get unique rows
+    SERVERS=$(echo -e "${SERVERS1}\n${SERVERS2}" | sort | uniq)
+
+    # Format lines to json
+    echo "$SERVERS" | sed 's/\(.*\)/{"{#SERVER}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
     echo -n ']}'
   ;;
 
   server)
-    LINE=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
-    VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    if [[ $ARGUMENT2 == respTimeRange* ]] || [[ $ARGUMENT2 == num* ]] || [[ $ARGUMENT2 == volume* ]] || [[ $ARGUMENT2 == uptime* ]] || [[ $ARGUMENT2 == respStat* ]]; then
+      # Sum the values up
+      VALUE=$((VALUE1+VALUE2))
+    elif [ "$ARGUMENT2" == "respTimeMin" ]; then
+      # Take the minimum of two values
+      VALUE=$((VALUE1<VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "respTimeMax" ]; then
+      # Take the maxmum of two values
+      VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "respTimeAvg" ]; then
+      # Take the average of two values, in relation to the transaction count
+      COUNT1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
+      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+    else
+      echo "Unsupported command argument $ARGUMENT2"
+      exit 1
+    fi
 
-    if [ -z "$VALUE" ] && [ "$ARGUMENT2" = "numTransactions" ]; then
+    if [ -z "$VALUE" ] && [ "$ARGUMENT2" == "numTransactions" ]; then
       # Server does not exist any more in JMX tree
       # Return number of transaction as 0 because 1) that's valid, no transactions 2) otherwise we cannot detect zero transactions in Zabbix
       echo "0"
+
+    else
+      echo "$VALUE"
     fi
   ;;
 
@@ -195,18 +256,44 @@ case $COMMAND in
 
   method_discovery)
     echo -n '{"data":['
-    # Get each groupName four lines after groupType = Method
-    # And format lines to json
-    grep -A 4 'groupType = Method;' /tmp/oag-jmx-monitoring.cache.txt \
+
+    METHODS1=$(grep -A 4 'groupType = Method;' "$CACHE1_FILE" \
       | grep 'groupName =' \
-      | sed -e 's/.*= \(.*\);/\1/' \
-      | sed 's/\(.*\)/{"{#METHOD}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
+      | sed -e 's/.*= \(.*\);/\1/')
+    METHODS2=$(grep -A 4 'groupType = Method;' "$CACHE2_FILE" \
+      | grep 'groupName =' \
+      | sed -e 's/.*= \(.*\);/\1/')
+
+    # Merge the lists and get unique rows
+    METHODS=$(echo -e "${METHODS1}\n${METHODS2}" | sort | uniq)
+
+    # Format lines to json
+    echo "$METHODS" | sed 's/\(.*\)/{"{#METHOD}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
     echo -n ']}'
   ;;
 
   method)
-    LINE=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
-    VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
+      # Sum the values up
+      VALUE=$((VALUE1+VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeMin" ]; then
+      # Take the minimum of two values
+      VALUE=$((VALUE1<VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeMax" ]; then
+      # Take the maxmum of two values
+      VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeAvg" ]; then
+      # Take the average of two values, in relation to the message count
+      COUNT1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+    else
+      echo "Unsupported command argument $ARGUMENT2"
+      exit 1
+    fi
+
     echo "$VALUE"
   ;;
 
@@ -227,18 +314,44 @@ case $COMMAND in
 
   service_discovery)
     echo -n '{"data":['
-    # Get each groupName four lines after groupType = Service
-    # And format lines to json
-    grep -A 4 'groupType = Service;' /tmp/oag-jmx-monitoring.cache.txt \
+
+    SERVICES1=$(grep -A 4 'groupType = Service;' "$CACHE1_FILE" \
       | grep 'groupName =' \
-      | sed -e 's/.*= \(.*\);/\1/' \
-      | sed 's/\(.*\)/{"{#SERVICE}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
+      | sed -e 's/.*= \(.*\);/\1/')
+    SERVICES2=$(grep -A 4 'groupType = Service;' "$CACHE2_FILE" \
+      | grep 'groupName =' \
+      | sed -e 's/.*= \(.*\);/\1/')
+
+    # Merge the lists and get unique rows
+    SERVICES=$(echo -e "${SERVICES1}\n${SERVICES2}" | sort | uniq)
+
+    # Format lines to json
+    echo "$SERVICES" | sed 's/\(.*\)/{"{#SERVICE}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
     echo -n ']}'
   ;;
 
   service)
-    LINE=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
-    VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
+      # Sum the values up
+      VALUE=$((VALUE1+VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeMin" ]; then
+      # Take the minimum of two values
+      VALUE=$((VALUE1<VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeMax" ]; then
+      # Take the maxmum of two values
+      VALUE=$((VALUE1>VALUE2?VALUE1:VALUE2))
+    elif [ "$ARGUMENT2" == "processingTimeAvg" ]; then
+      # Take the average of two values, in relation to the message count
+      COUNT1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      COUNT2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
+      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+    else
+      echo "Unsupported command argument $ARGUMENT2"
+      exit 1
+    fi
+
     echo "$VALUE"
   ;;
 
@@ -256,18 +369,33 @@ case $COMMAND in
 
   client_discovery)
     echo -n '{"data":['
-    # Get each groupName four lines after groupType = Client
-    # And format lines to json
-    grep -A 4 'groupType = Client;' /tmp/oag-jmx-monitoring.cache.txt \
+
+    CLIENTS1=$(grep -A 4 'groupType = Client;' "$CACHE1_FILE" \
       | grep 'groupName =' \
-      | sed -e 's/.*= \(.*\);/\1/' \
-      | sed 's/\(.*\)/{"{#CLIENT}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
+      | sed -e 's/.*= \(.*\);/\1/')
+    CLIENTS2=$(grep -A 4 'groupType = Client;' "$CACHE2_FILE" \
+      | grep 'groupName =' \
+      | sed -e 's/.*= \(.*\);/\1/')
+
+    # Merge the lists and get unique rows
+    CLIENTS=$(echo -e "${CLIENTS1}\n${CLIENTS2}" | sort | uniq)
+
+    # Format lines to json
+    echo "$CLIENTS" | sed 's/\(.*\)/{"{#CLIENT}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
     echo -n ']}'
   ;;
 
   client)
-    LINE=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' /tmp/oag-jmx-monitoring.cache.txt | grep "$ARGUMENT2 =")
-    VALUE=$(echo "$LINE" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE1=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    VALUE2=$(grep -B 4 -A 3 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" | grep "$ARGUMENT2 =" | sed -e 's/.*= \(.*\);/\1/')
+    if [ "$ARGUMENT2" == "exceptions" ] || [ "$ARGUMENT2" == "failures" ] || [ "$ARGUMENT2" == "numMessages" ] || [ "$ARGUMENT2" == "successes" ] || [ "$ARGUMENT2" == "uptime" ]; then
+      # Sum the values up
+      VALUE=$((VALUE1+VALUE2))
+    else
+      echo "Unsupported command argument $ARGUMENT2"
+      exit 1
+    fi
+
     echo "$VALUE"
   ;;
 
