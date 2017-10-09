@@ -60,7 +60,7 @@ function refresh_cache()
     if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
-           | docker run --rm --name oag-jmx-monitoring -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
+           | docker run --rm --name "oag-jmx-monitoring-$CACHE_FILE" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
              java -jar /jmxterm.jar \
              -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
@@ -97,6 +97,7 @@ if [ "$4" == "system" ]; then
   CACHE_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
 
   if ! refresh_cache "$SERVER_AND_PORT" "$CACHE_FILE"; then
+    echo "Failed to connect to $SERVER_AND_PORT"
     exit 1
   fi
 
@@ -114,6 +115,7 @@ elif [ "$#" -eq 5 -o "$#" -eq 7 ]; then
 
   if ! refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" && ! refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE"; then
     # Both servers fail (if one server is down we can still proceed)
+    echo "Failed to connect to both servers $SERVER1_AND_PORT and $SERVER2_AND_PORT"
     exit 1
   fi
 
