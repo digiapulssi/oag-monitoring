@@ -47,6 +47,7 @@ function refresh_cache()
 {
   SERVER_AND_PORT="$1"
   CACHE_FILE="$2"
+  CONTAINER_NAME='oag-jmx-monitoring.cache-'$(echo "$SERVER_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
   if [ ! -f "$CACHE_FILE" ] || [[ $(find "$CACHE_FILE" -mmin +2 -print 2>/dev/null) ]]; then
     # Cache is older than two minutes
 
@@ -60,7 +61,7 @@ function refresh_cache()
     if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
-           | docker run --rm --name "oag-jmx-monitoring-$CACHE_FILE" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
+           | docker run --rm --name "$CONTAINER_NAME" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
              java -jar /jmxterm.jar \
              -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
@@ -113,7 +114,9 @@ elif [ "$#" -eq 5 -o "$#" -eq 7 ]; then
   CACHE1_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER1_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
   CACHE2_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER2_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
 
-  if ! refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" && ! refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE"; then
+  refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ERR1=1
+  refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ERR2=1
+  if [ -n "$ERR1" ] && [ -n "$ERR2" ]; then
     # Both servers fail (if one server is down we can still proceed)
     echo "Failed to connect to both servers $SERVER1_AND_PORT and $SERVER2_AND_PORT"
     exit 1
@@ -210,7 +213,11 @@ case $COMMAND in
       | sed -e 's/.*= \(.*\);/\1/')
 
     # Merge the lists and get unique rows
-    SERVERS=$(echo -e "${SERVERS1}\n${SERVERS2}" | sort | uniq)
+    if [ -z "$SERVERS1" -o -z "$SERVERS2" ]; then
+      SERVERS=$(echo -e "${SERVERS1}${SERVERS2}" | sort | uniq)
+    else
+      SERVERS=$(echo -e "${SERVERS1}\n${SERVERS2}" | sort | uniq)
+    fi
 
     # Format lines to json
     echo "$SERVERS" | sed 's/\(.*\)/{"{#SERVER}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
@@ -276,7 +283,11 @@ case $COMMAND in
       | sed -e 's/.*= \(.*\);/\1/')
 
     # Merge the lists and get unique rows
-    METHODS=$(echo -e "${METHODS1}\n${METHODS2}" | sort | uniq)
+    if [ -z "$METHODS1" -o -z "$METHODS2" ]; then
+      METHODS=$(echo -e "${METHODS1}${METHODS2}" | sort | uniq)
+    else
+      METHODS=$(echo -e "${METHODS1}\n${METHODS2}" | sort | uniq)
+    fi
 
     # Format lines to json
     echo "$METHODS" | sed 's/\(.*\)/{"{#METHOD}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
@@ -334,7 +345,11 @@ case $COMMAND in
       | sed -e 's/.*= \(.*\);/\1/')
 
     # Merge the lists and get unique rows
-    SERVICES=$(echo -e "${SERVICES1}\n${SERVICES2}" | sort | uniq)
+    if [ -z "$SERVICES1" -o -z "$SERVICES2" ]; then
+      SERVICES=$(echo -e "${SERVICES1}${SERVICES2}" | sort | uniq)
+    else
+      SERVICES=$(echo -e "${SERVICES1}\n${SERVICES2}" | sort | uniq)
+    fi
 
     # Format lines to json
     echo "$SERVICES" | sed 's/\(.*\)/{"{#SERVICE}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
@@ -389,7 +404,11 @@ case $COMMAND in
       | sed -e 's/.*= \(.*\);/\1/')
 
     # Merge the lists and get unique rows
-    CLIENTS=$(echo -e "${CLIENTS1}\n${CLIENTS2}" | sort | uniq)
+    if [ -z "$CLIENTS1" -o -z "$CLIENTS2" ]; then
+      CLIENTS=$(echo -e "${CLIENTS1}${CLIENTS2}" | sort | uniq)
+    else
+      CLIENTS=$(echo -e "${CLIENTS1}\n${CLIENTS2}" | sort | uniq)
+    fi
 
     # Format lines to json
     echo "$CLIENTS" | sed 's/\(.*\)/{"{#CLIENT}":"\1"}/g' | sed '$!s/$/,/' | tr '\n' ' '
