@@ -57,13 +57,20 @@ function refresh_cache()
       return 1
     fi
 
+    # Use username and password if they're specified
+    if [ -z "$USERNAME" ]; then
+      LOGINPARAM=""
+    else
+      LOGINPARAM="-u ${USERNAME} -p ${PASSWORD}"
+    fi
+
     # Use docker if it's installed and the current user have rights to access the docker engine
     if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
            | docker run --rm --name "$CONTAINER_NAME" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
              java -jar /jmxterm.jar \
-             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
         touch "$CACHE_FILE.error"
@@ -78,7 +85,7 @@ function refresh_cache()
 
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
            | java -jar "${DIR}/jmxterm-1.0.0-uber.jar" \
-             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" -u "${USERNAME}" -p "${PASSWORD}" -n -v silent > "$CACHE_FILE"; then
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE"; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
         touch "$CACHE_FILE.error"
@@ -97,6 +104,16 @@ if [ "$4" == "system" ]; then
   ARGUMENT="$5"
   CACHE_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
 
+  # Lock the execution of this script for the given servers because
+  # 1) two concurrent docker run commands with identical container names will fail, and
+  # 2) reading a cache file while at the same time writing to it will produce unwanted results
+  # The lock will unlock itself at the end of the script when the file handle is released
+  exec 5> "${CACHE_FILE}.lock"
+  if ! flock -w 10 5; then
+    echo "Failed to acquire lock ${CACHE_FILE}.lock within 10 seconds"
+    exit 1
+  fi
+
   if ! refresh_cache "$SERVER_AND_PORT" "$CACHE_FILE"; then
     echo "Failed to connect to $SERVER_AND_PORT"
     exit 1
@@ -114,8 +131,23 @@ elif [ "$#" -eq 5 -o "$#" -eq 7 ]; then
   CACHE1_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER1_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
   CACHE2_FILE='/tmp/oag-jmx-monitoring.cache.'$(echo "$SERVER2_AND_PORT" | sed -e 's/[^a-zA-Z0-9\-]/_/g')
 
-  refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ERR1=1
-  refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ERR2=1
+  # Lock the execution of this script for the given servers because
+  # 1) two concurrent docker run commands with identical container names will fail, and
+  # 2) reading a cache file while at the same time writing to it will produce unwanted results
+  # The lock will unlock itself at the end of the script when the file handle is released
+  exec 5> "${CACHE1_FILE}.lock"
+  exec 6> "${CACHE2_FILE}.lock"
+  if ! flock -w 10 5; then
+    echo "Failed to acquire lock ${CACHE1_FILE}.lock within 10 seconds"
+    exit 1
+  fi
+  if ! flock -w 10 6; then
+    echo "Failed to acquire lock ${CACHE2_FILE}.lock within 10 seconds"
+    exit 1
+  fi
+
+  refresh_cache "$SERVER1_AND_PORT" "$CACHE1_FILE" || ERR1=1
+  refresh_cache "$SERVER2_AND_PORT" "$CACHE2_FILE" || ERR2=1
   if [ -n "$ERR1" ] && [ -n "$ERR2" ]; then
     # Both servers fail (if one server is down we can still proceed)
     echo "Failed to connect to both servers $SERVER1_AND_PORT and $SERVER2_AND_PORT"
