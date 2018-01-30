@@ -35,7 +35,7 @@ while read LINE; do
     else
       echo -n ","
     fi
-    echo -n '{"{#PATH}":"'${PATH}'","{#BACKEND}":"'${BACKEND}'","{#THRESHOLD_COUNT}":"'${THRESHOLD_COUNT}'","{#THRESHOLD_SECONDS}":"'${THRESHOLD_SECONDS}'","{#ID}":"'${ID}'"}'
+    echo -n '{"{#PATH}":"'${PATH}'","{#BACKEND}":"'${BACKEND}'","{#THRESHOLD_COUNT}":"'${THRESHOLD_COUNT}'","{#THRESHOLD_MINUTES}":"'${THRESHOLD_MINUTES}'","{#THRESHOLD_SECONDS}":"'${THRESHOLD_SECONDS}'","{#ID}":"'${ID}'"}'
   else
     # Error parsing configuration line; skip it
     echo -n ''
