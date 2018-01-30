@@ -15,11 +15,30 @@ fi
 #  {#PATH}
 #  {#BACKEND}
 #  {#THRESHOLD_COUNT}
-#  {#THRESHOLD_MINUTES}
+#  {#THRESHOLD_SECONDS}
 #  {#ID}
 
 echo -n '{"data":['
-sed -n -e 's/^\(.*\)|\(.*\)|\(.*\)|\(.*\)|\(.*\)$/{"{#PATH}":"\1","{#BACKEND}":"\2","{#THRESHOLD_COUNT}":"\3","{#THRESHOLD_MINUTES}":"\4","{#ID}":"\5"}/p' "$CONFIG_FILE" \
-  | sed '$!s/$/,/' \
-  | tr '\n' ' '
+LINES=$(cat "$CONFIG_FILE")
+while read LINE; do
+  if [[ "$LINE" =~ ^(.*)\|(.*)\|(.*)\|(.*)\|(.*)$ ]]; then
+    PATH="${BASH_REMATCH[1]}"
+    BACKEND="${BASH_REMATCH[2]}"
+    THRESHOLD_COUNT="${BASH_REMATCH[3]}"
+    THRESHOLD_MINUTES="${BASH_REMATCH[4]}"
+    ID="${BASH_REMATCH[5]}"
+
+    THRESHOLD_SECONDS="$((THRESHOLD_MINUTES*60))"
+
+    if [ -z "$NOFIRST" ]; then
+      NOFIRST="1"
+    else
+      echo -n ","
+    fi
+    echo -n '{"{#PATH}":"'${PATH}'","{#BACKEND}":"'${BACKEND}'","{#THRESHOLD_COUNT}":"'${THRESHOLD_COUNT}'","{#THRESHOLD_SECONDS}":"'${THRESHOLD_SECONDS}'","{#ID}":"'${ID}'"}'
+  else
+    # Error parsing configuration line; skip it
+    echo -n ''
+  fi
+done <<< "$LINES"
 echo -n ']}'
