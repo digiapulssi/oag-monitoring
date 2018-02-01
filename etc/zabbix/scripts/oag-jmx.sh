@@ -67,6 +67,9 @@ function refresh_cache()
     # Use docker if it's installed and the current user have rights to access the docker engine
     if command -v docker >/dev/null 2>&1 && [ -w /var/run/docker.sock ]; then
 
+      # Try to remove container just in case it has been left dangling by some error
+      docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1
+
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
            | docker run --rm --name "$CONTAINER_NAME" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
              java -jar /jmxterm.jar \
