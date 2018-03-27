@@ -1,4 +1,5 @@
 #!/bin/bash
+# Version: 1.0
 set -e
 
 # Usage: ./oag-log-unidentified-discovery.sh <path to discovery list configuration file>
