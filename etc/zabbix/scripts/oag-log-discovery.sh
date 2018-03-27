@@ -1,4 +1,5 @@
 #!/bin/bash
+# Version: 1.0
 set -e
 
 # Usage: ./oag-log-discovery.sh <path to discovery list configuration file>
@@ -17,16 +18,18 @@ fi
 #  {#THRESHOLD_COUNT}
 #  {#THRESHOLD_SECONDS}
 #  {#ID}
+#  {#CUSTOMER}
 
 echo -n '{"data":['
 LINES=$(cat "$CONFIG_FILE")
 while read LINE; do
-  if [[ "$LINE" =~ ^(.*)\|(.*)\|(.*)\|(.*)\|(.*)$ ]]; then
+  if [[ "$LINE" =~ ^(.*)\|(.*)\|(.*)\|(.*)\|(.*)\|(.*)$ ]]; then
     PATH="${BASH_REMATCH[1]}"
     BACKEND="${BASH_REMATCH[2]}"
     THRESHOLD_COUNT="${BASH_REMATCH[3]}"
     THRESHOLD_MINUTES="${BASH_REMATCH[4]}"
     ID="${BASH_REMATCH[5]}"
+    CUSTOMER="${BASH_REMATCH[6]}"
 
     THRESHOLD_SECONDS="$((THRESHOLD_MINUTES*60))"
 
@@ -35,7 +38,7 @@ while read LINE; do
     else
       echo -n ","
     fi
-    echo -n '{"{#PATH}":"'${PATH}'","{#BACKEND}":"'${BACKEND}'","{#THRESHOLD_COUNT}":"'${THRESHOLD_COUNT}'","{#THRESHOLD_MINUTES}":"'${THRESHOLD_MINUTES}'","{#THRESHOLD_SECONDS}":"'${THRESHOLD_SECONDS}'","{#ID}":"'${ID}'"}'
+    echo -n '{"{#PATH}":"'${PATH}'","{#BACKEND}":"'${BACKEND}'","{#THRESHOLD_COUNT}":"'${THRESHOLD_COUNT}'","{#THRESHOLD_MINUTES}":"'${THRESHOLD_MINUTES}'","{#THRESHOLD_SECONDS}":"'${THRESHOLD_SECONDS}'","{#ID}":"'${ID}'","{#CUSTOMER}":"'${CUSTOMER}'"}'
   else
     # Error parsing configuration line; skip it
     echo -n ''
