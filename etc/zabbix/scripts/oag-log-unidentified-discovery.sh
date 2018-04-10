@@ -24,8 +24,9 @@ fi
 # negative look-aheads) to PCRE (Perl Compatible Regular Expressions). See https://support.zabbix.com/browse/ZBX-3924.
 
 echo -n '{"data":[{"{#REGEXP}":"^(?!.*('
-sed -n -e 's/^\(.*\)|\(.*\)|\(.*\)|\(.*\)|\(.*\)$/|\1|\2|/p' "$CONFIG_FILE" \
-  | sed 's/[]\.\\|$(){}?+*^]/\\&/g' \
+sed -n -e 's/^\(.*\)|\(.*\)|\(.*\)|\(.*\)|\(.*\)|\(.*\)$/\1.*host":"\2/p' "$CONFIG_FILE" \
+  | sed 's/[]\.\\|$(){}?+*^]/\\\\&/g' \
+  | sed 's/"/\\&/g' \
   | sed '$!s/$/|/' \
   | tr -d '\n'
-echo -n ')).*$"}]}'
+echo -n ')).*legs.*\"status\":[45].*$"}]}'
