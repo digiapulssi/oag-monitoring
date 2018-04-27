@@ -73,7 +73,7 @@ function refresh_cache()
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
            | docker run --rm --name "$CONTAINER_NAME" -i -v "${DIR}/jmxterm-1.0.0-uber.jar:/jmxterm.jar:ro" java:7 \
              java -jar /jmxterm.jar \
-             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE"; then
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE" 2>/dev/null; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
         touch "$CACHE_FILE.error"
@@ -88,7 +88,7 @@ function refresh_cache()
 
       if ! echo get -b com.vordel.rtm:type=Metrics AllMetricGroupTotals \
            | java -jar "${DIR}/jmxterm-1.0.0-uber.jar" \
-             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE"; then
+             -l "service:jmx:rmi:///jndi/rmi://${SERVER_AND_PORT}/jmxrmi" ${LOGINPARAM[@]} -n -v silent > "$CACHE_FILE" 2>/dev/null; then
         # Failed, clean up cache so that subsequent calls do not just return empty data
         rm -f "$CACHE_FILE"
         touch "$CACHE_FILE.error"
@@ -196,7 +196,7 @@ case $COMMAND in
   #  systemCpuMax = 99;
   #  systemMemoryTotal = 8057808;
   #  memoryUsedAvg = 1071296;
-  # }, { 
+  # }, {
 
 
   system)
@@ -206,7 +206,7 @@ case $COMMAND in
   ;;
 
   ## Target server block is like the following:
-  #  }, { 
+  #  }, {
   #  respTimeRange1 = 49;
   #  respTimeRange3 = 17;
   #  groupName = server1:80;
@@ -234,7 +234,7 @@ case $COMMAND in
   #  respStatRange4 = 0;
   #  respStatRange3 = 0;
   #  groupId = 63;
-  # }, { 
+  # }, {
 
   server_discovery)
     echo -n '{"data":['
@@ -292,7 +292,7 @@ case $COMMAND in
   ;;
 
   ## Method block is like the following:
-  #  }, { 
+  #  }, {
   #  groupType = Method;
   #  exceptions = 0;
   #  failures = 0;
@@ -305,7 +305,7 @@ case $COMMAND in
   #  uptime = 519758;
   #  groupParentId = 51;
   #  processingTimeAvg = 465;
-  # }, { 
+  # }, {
 
   method_discovery)
     echo -n '{"data":['
@@ -355,7 +355,7 @@ case $COMMAND in
   ;;
 
   ## Service block is like the following:
-  #  }, { 
+  #  }, {
   #  groupType = Service;
   #  exceptions = 0;
   #  failures = 0;
@@ -367,7 +367,7 @@ case $COMMAND in
   #  processingTimeMax = 266;
   #  uptime = 521052;
   #  processingTimeAvg = 42;
-  # }, { 
+  # }, {
 
   service_discovery)
     echo -n '{"data":['
@@ -417,7 +417,7 @@ case $COMMAND in
   ;;
 
   ## Client block is like the following:
-  #  }, { 
+  #  }, {
   #  groupType = Client;
   #  exceptions = 0;
   #  failures = 0;
@@ -426,7 +426,7 @@ case $COMMAND in
   #  numMessages = 1122;
   #  successes = 1122;
   #  uptime = 520975;
-  # }, { 
+  # }, {
 
   client_discovery)
     echo -n '{"data":['
@@ -470,4 +470,3 @@ case $COMMAND in
   ;;
 
 esac
-
