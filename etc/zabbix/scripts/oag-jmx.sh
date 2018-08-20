@@ -275,7 +275,17 @@ case $COMMAND in
       # Take the average of two values, in relation to the transaction count
       COUNT1=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
       COUNT2=$(grep -B 2 -A 24 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numTransactions =" | sed -e 's/.*= \(.*\);/\1/')
-      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+      # Checking that COUNT1 + COUNT2 isn't 0 and preventing division by 0 error
+      COUNT_SUM=$((COUNT1+COUNT2))
+      if [[ COUNT_SUM -eq 0 ]]; then
+        VALUE=0
+      else
+        VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+        # Checking that VALUE isn't negative number
+        if ! [[ $VALUE =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+          VALUE=0
+        fi
+      fi
     else
       echo "Unsupported command argument $ARGUMENT2"
       exit 1
@@ -345,7 +355,17 @@ case $COMMAND in
       # Take the average of two values, in relation to the message count
       COUNT1=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
       COUNT2=$(grep -B 4 -A 7 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
-      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+      # Checking that COUNT1 + COUNT2 isn't 0 and preventing division by 0 error
+      COUNT_SUM=$((COUNT1+COUNT2))
+      if [[ COUNT_SUM -eq 0 ]]; then
+        VALUE=0
+      else
+        VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+        # Checking that VALUE isn't negative number
+        if ! [[ $VALUE =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+          VALUE=0
+        fi
+      fi
     else
       echo "Unsupported command argument $ARGUMENT2"
       exit 1
@@ -407,7 +427,17 @@ case $COMMAND in
       # Take the average of two values, in relation to the message count
       COUNT1=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE1_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
       COUNT2=$(grep -B 4 -A 6 'groupName = '"${ARGUMENT}"';' "$CACHE2_FILE" 2>/dev/null | grep "numMessages =" | sed -e 's/.*= \(.*\);/\1/')
-      VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+      # Checking that COUNT1 + COUNT2 isn't 0 and preventing division by 0 error
+      COUNT_SUM=$((COUNT1+COUNT2))
+      if [[ COUNT_SUM -eq 0 ]]; then
+        VALUE=0
+      else
+        VALUE=$(((VALUE1*COUNT1+VALUE2*COUNT2)/(COUNT1+COUNT2)))
+        # Checking that VALUE isn't negative number
+        if ! [[ $VALUE =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+          VALUE=0
+        fi
+      fi
     else
       echo "Unsupported command argument $ARGUMENT2"
       exit 1
